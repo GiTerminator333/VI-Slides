@@ -2,6 +2,7 @@ import { Server, Socket } from "socket.io";
 import http from "http";
 import classModel from "../models/class.model";
 import { socketAuth } from "./socketAuth";
+import { isOriginAllowed, allowedOrigins } from "../config/cors";
 
 let io: Server;
 
@@ -13,25 +14,20 @@ const classPolls = new Map<string, any>();
 
 const pastPolls = new Map<string, any[]>();
 
-const allowedOrigins = [
-  "http://localhost:5173",
-  process.env.CLIENT_URL, 
-].filter(Boolean) as string[];
-
 export const initSocket = (server: http.Server) => {
   io = new Server(server, {
-  cors: {
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.log("Blocked origin:", origin);
-        callback(new Error("Not allowed by CORS"));
-      }
+    cors: {
+      origin: (origin, callback) => {
+        if (isOriginAllowed(origin)) {
+          callback(null, true);
+        } else {
+          console.warn("[Socket.IO CORS Blocked] origin:", origin, "Allowed:", allowedOrigins);
+          callback(new Error(`Not allowed by CORS: ${origin}`));
+        }
+      },
+      credentials: true,
     },
-    credentials: true,
-  },
-});
+  });
 
   io.use(socketAuth);
 
