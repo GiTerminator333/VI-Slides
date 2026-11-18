@@ -203,3 +203,94 @@ export const getClassById = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ message: "Error fetching class" });
   }
 };
+
+// ------------------- GET CLASS BY CODE -------------------
+export const getClassByCode = async (req: AuthRequest, res: Response) => {
+  try {
+    const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
+    const classObj = await classModel.findOne({
+      classCode: code ? code.toUpperCase() : "",
+    });
+
+    if (!classObj) {
+      return res.status(404).json({ message: "Class not found" });
+    }
+
+    res.json(classObj);
+  } catch (err) {
+    res.status(500).json({ message: "Error fetching class by code" });
+  }
+};
+
+// ------------------- SLIDE PDF STORE & MANAGEMENT -------------------
+const classPDFStore = new Map<
+  string,
+  { name: string; buffer: Buffer; mimeType: string }
+>();
+
+export const uploadClassPDF = async (req: AuthRequest, res: Response) => {
+  try {
+    const classId = Array.isArray(req.params.classId) ? req.params.classId[0] : req.params.classId;
+    const { name, dataUrl } = req.body;
+
+    if (!dataUrl) {
+      return res.status(400).json({ message: "No PDF data provided" });
+    }
+
+    const matches = dataUrl.match(/^data:(.+?);base64,(.+)$/);
+    let buffer: Buffer;
+    let mimeType = "application/pdf";
+
+    if (matches) {
+      mimeType = matches[1] || "application/pdf";
+      buffer = Buffer.from(matches[2], "base64");
+    } else {
+      buffer = Buffer.from(dataUrl, "base64");
+    }
+
+    classPDFStore.set(classId, {
+      name: name || "slides.pdf",
+      buffer,
+      mimeType,
+    });
+
+    const fileUrl = `/api/class/${classId}/pdf`;
+
+    res.json({
+      success: true,
+      file: {
+        name: name || "slides.pdf",
+        url: fileUrl,
+        type: mimeType,
+      },
+    });
+  } catch (err) {
+    console.error("PDF upload error:", err);
+    res.status(500).json({ message: "Error uploading PDF" });
+  }
+};
+
+export const getClassPDF = (req: AuthRequest, res: Response) => {
+  const classId = Array.isArray(req.params.classId) ? req.params.classId[0] : req.params.classId;
+  const stored = classPDFStore.get(classId);
+
+  if (!stored) {
+    return res
+      .status(404)
+      .json({ message: "No PDF found for this class session" });
+  }
+
+  res.setHeader("Content-Type", stored.mimeType);
+  res.setHeader(
+    "Content-Disposition",
+    `inline; filename="${encodeURIComponent(stored.name)}"`
+  );
+  res.setHeader("Content-Length", stored.buffer.length);
+  res.send(stored.buffer);
+};
+
+export const deleteClassPDF = (req: AuthRequest, res: Response) => {
+  const classId = Array.isArray(req.params.classId) ? req.params.classId[0] : req.params.classId;
+  classPDFStore.delete(classId);
+  res.json({ success: true, message: "PDF removed" });
+};

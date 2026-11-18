@@ -249,6 +249,15 @@ export const getClassById = (id: string) =>
 export const getClassByCode = (code: string) =>
   api.get<GetClassResponse>(`/class/code/${code}`);
 
+export const uploadClassPDF = (classId: string, name: string, dataUrl: string) =>
+  api.post<{ success: boolean; file: { name: string; url: string; type: string } }>(
+    `/class/${classId}/pdf`,
+    { name, dataUrl }
+  );
+
+export const deleteClassPDF = (classId: string) =>
+  api.delete<{ success: boolean; message: string }>(`/class/${classId}/pdf`);
+
 // -------- TODOS --------
 export const getTodos = () =>
   api.get<TodosResponse>("/todos");

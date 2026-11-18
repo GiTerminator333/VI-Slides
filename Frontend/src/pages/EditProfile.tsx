@@ -122,11 +122,11 @@ export default function EditProfile() {
     <div className="flex items-center justify-center min-h-dvh px-4">
       <div className="absolute top-6 left-6">
         <Button
-            onClick={() => navigate(-1)}
-            className="absolute top-6 left-6 px-4 h-10"
-            >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            <span className="text-gradient">Back</span>
+          onClick={() => navigate(-1)}
+          className="px-4 h-10"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          <span className="text-gradient">Back</span>
         </Button>
       </div>  
       <div className="w-full max-w-lg">

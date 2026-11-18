@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { getSocket } from "@/lib/socket";
 
 export const useSessionSocket = ({
@@ -12,6 +12,8 @@ export const useSessionSocket = ({
   micStream,
   localStream,
   setSharedFile,
+  slidePage,
+  setSlidePage,
   setQuestions,
   setCurrentPoll,
   setPollStats,
@@ -22,6 +24,11 @@ export const useSessionSocket = ({
   currentPoll,
   onSessionEnded,
 }: any) => {
+  const currentPollRef = useRef(currentPoll);
+  useEffect(() => {
+    currentPollRef.current = currentPoll;
+  }, [currentPoll]);
+
   useEffect(() => {
     if (!classId) return;
 
@@ -39,7 +46,7 @@ export const useSessionSocket = ({
     };
 
     const handleClassEnded = (data: { classId: string }) => {
-      const incomingId = typeof data === "string" ? data : data.classId;
+      const incomingId = typeof data === "string" ? data : data?.classId;
       if (incomingId !== classId) return;
 
       if (isTeacher) handleStreamStopped();
@@ -82,9 +89,13 @@ export const useSessionSocket = ({
         }
       };
 
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit("webrtc_offer", { to: studentId, offer });
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit("webrtc_offer", { to: studentId, offer });
+      } catch (err) {
+        console.error("Error creating WebRTC offer for student:", err);
+      }
     };
 
     const handleOffer = async ({ offer, from }: any) => {
@@ -113,7 +124,7 @@ export const useSessionSocket = ({
               setTimeout(() => {
                 audioEl.muted = false;
               }, 500);
-            });
+            }).catch(() => {});
           }
 
           if (event.track.kind === "video" && videoRef.current) {
@@ -128,22 +139,32 @@ export const useSessionSocket = ({
         };
       }
 
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
-      iceQueue.current.forEach((c: any) =>
-        pc!.addIceCandidate(new RTCIceCandidate(c))
-      );
-      iceQueue.current = [];
+        iceQueue.current.forEach((c: any) =>
+          pc!.addIceCandidate(new RTCIceCandidate(c))
+        );
+        iceQueue.current = [];
 
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
 
-      socket.emit("webrtc_answer", { to: from, answer });
+        socket.emit("webrtc_answer", { to: from, answer });
+      } catch (err) {
+        console.error("Error answering WebRTC offer:", err);
+      }
     };
 
     const handleAnswer = async ({ from, answer }: any) => {
       const pc = peerConnections.current[from];
-      if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      if (pc) {
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        } catch (err) {
+          console.error("Error setting remote description from answer:", err);
+        }
+      }
     };
 
     const handleIce = async ({ from, candidate }: any) => {
@@ -152,7 +173,7 @@ export const useSessionSocket = ({
         : pcRef.current;
 
       if (targetPc?.remoteDescription) {
-        targetPc.addIceCandidate(new RTCIceCandidate(candidate));
+        targetPc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
       } else if (!isTeacher) {
         iceQueue.current.push(candidate);
       }
@@ -162,8 +183,27 @@ export const useSessionSocket = ({
       if (videoRef.current) videoRef.current.srcObject = null;
     };
 
-    const handleNewFile = (file: any) => setSharedFile(file);
-    const handleAllQuestions = (data: any[]) => setQuestions(data);
+    const handleNewFile = (file: any) => {
+      setSharedFile(file);
+      if (file?.page && setSlidePage) {
+        setSlidePage(file.page);
+      }
+    };
+
+    const handleSlidePageChanged = ({ page }: { page: number }) => {
+      if (setSlidePage) {
+        setSlidePage(page);
+      }
+    };
+
+    const handleFileShareStopped = () => {
+      setSharedFile(null);
+      if (setSlidePage) {
+        setSlidePage(1);
+      }
+    };
+
+    const handleAllQuestions = (data: any[]) => setQuestions(data || []);
 
     const handleNewQuestion = (q: any) => {
       setQuestions((prev: any[]) => {
@@ -183,42 +223,51 @@ export const useSessionSocket = ({
       );
     };
 
-    // ================= POLL =================
-    socket.on("poll_launched", (poll) => {
+    // ================= POLL HANDLERS =================
+    const handlePollLaunched = (poll: any) => {
       setCurrentPoll(poll);
       setHasVoted(false);
       setPollStats(null);
       setShowPollStats(false);
-    });
+    };
 
-    socket.on("poll_response_updated", ({ currentStats, totalResponses }: any) => {
+    const handlePollResponseUpdated = ({ currentStats, totalResponses }: any) => {
       if (isTeacher) {
         setPollStats({
-          question: currentPoll?.question,
+          question: currentPollRef.current?.question,
           statistics: currentStats,
           totalResponses,
         });
       }
-    });
+    };
 
-    socket.on("poll_closed", ({ statistics, question }: any) => {
+    const handlePollClosed = ({ statistics, question }: any) => {
       setPollStats({
         question,
         statistics,
-        totalResponses: statistics.reduce(
-          (sum: number, s: any) => sum + s.count,
+        totalResponses: (statistics || []).reduce(
+          (sum: number, s: any) => sum + (s.count || 0),
           0
         ),
       });
 
       setShowPollStats(true);
       setCurrentPoll(null);
-    });
+    };
 
-    socket.on("past_polls", (polls) => {
-      setPastPolls(polls);
-    });
+    const handlePastPolls = (polls: any[]) => {
+      setPastPolls(polls || []);
+    };
 
+    const handleUserLeft = ({ userId }: { userId: string }) => {
+      console.log("User left session:", userId);
+    };
+
+    // Attach listeners
+    socket.on("poll_launched", handlePollLaunched);
+    socket.on("poll_response_updated", handlePollResponseUpdated);
+    socket.on("poll_closed", handlePollClosed);
+    socket.on("past_polls", handlePastPolls);
     socket.on("class_ended", handleClassEnded);
     socket.on("student_joined", handleStudentJoined);
     socket.on("webrtc_offer", handleOffer);
@@ -226,10 +275,13 @@ export const useSessionSocket = ({
     socket.on("webrtc_ice_candidate", handleIce);
     socket.on("class_stopped", handleClassStopped);
     socket.on("new_file_shared", handleNewFile);
+    socket.on("slide_page_changed", handleSlidePageChanged);
+    socket.on("file_share_stopped", handleFileShareStopped);
     socket.on("all_questions", handleAllQuestions);
     socket.on("new_question", handleNewQuestion);
     socket.on("question_answered", handleQuestionAnswered);
     socket.on("mic_toggle", handleMicToggle);
+    socket.on("user_left", handleUserLeft);
 
     const onConnect = () => {
       socket.emit("join_class_room", { classId });
@@ -238,8 +290,27 @@ export const useSessionSocket = ({
     if (socket.connected) onConnect();
     socket.on("connect", onConnect);
 
+    // CLEANUP ONLY OWN LISTENERS (Do NOT wipe all socket listeners!)
     return () => {
-      socket.removeAllListeners();
+      socket.off("poll_launched", handlePollLaunched);
+      socket.off("poll_response_updated", handlePollResponseUpdated);
+      socket.off("poll_closed", handlePollClosed);
+      socket.off("past_polls", handlePastPolls);
+      socket.off("class_ended", handleClassEnded);
+      socket.off("student_joined", handleStudentJoined);
+      socket.off("webrtc_offer", handleOffer);
+      socket.off("webrtc_answer", handleAnswer);
+      socket.off("webrtc_ice_candidate", handleIce);
+      socket.off("class_stopped", handleClassStopped);
+      socket.off("new_file_shared", handleNewFile);
+      socket.off("slide_page_changed", handleSlidePageChanged);
+      socket.off("file_share_stopped", handleFileShareStopped);
+      socket.off("all_questions", handleAllQuestions);
+      socket.off("new_question", handleNewQuestion);
+      socket.off("question_answered", handleQuestionAnswered);
+      socket.off("mic_toggle", handleMicToggle);
+      socket.off("user_left", handleUserLeft);
+      socket.off("connect", onConnect);
     };
-  }, [classId, isTeacher, currentPoll]);
+  }, [classId, isTeacher]);
 };

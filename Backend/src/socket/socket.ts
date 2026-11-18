@@ -1,6 +1,7 @@
 import { Server, Socket } from "socket.io";
 import http from "http";
 import classModel from "../models/class.model";
+import pollModel from "../models/poll.model";
 import { socketAuth } from "./socketAuth";
 import { isOriginAllowed, allowedOrigins } from "../config/cors";
 
@@ -12,7 +13,12 @@ const classQuestions = new Map<string, any[]>();
 // Store active polls per class
 const classPolls = new Map<string, any>();
 
+// Store past polls per class in memory (and persist to DB)
 const pastPolls = new Map<string, any[]>();
+
+// Store active shared file (PDF slides) per class
+const classActiveFiles = new Map<string, any>();
+
 
 export const initSocket = (server: http.Server) => {
   io = new Server(server, {
@@ -72,6 +78,16 @@ export const initSocket = (server: http.Server) => {
         }
 
         socket.emit("all_questions", classQuestions.get(classId));
+
+        // If a file/slides is currently active, send to the joiner immediately
+        if (classActiveFiles.has(classId)) {
+          socket.emit("new_file_shared", classActiveFiles.get(classId));
+        }
+
+        // If a poll is currently active, send to the joiner immediately
+        if (classPolls.has(classId)) {
+          socket.emit("poll_launched", classPolls.get(classId));
+        }
 
         socket.to(classId).emit("user_joined", {
           userId: user._id,
@@ -229,13 +245,14 @@ socket.on("submit_poll_response", ({ classId, pollId, selectedOption }) => {
     return socket.emit("error", "Poll not found or expired");
   }
 
-  // CHECK IF USER ALREADY VOTED
-  const alreadyVoted = poll.responses[selectedOption]?.some(
-    (r: any) => r.userId.toString() === user._id.toString()
+  // CHECK IF USER ALREADY VOTED ACROSS ALL OPTIONS
+  const alreadyVoted = Object.values(poll.responses).some((responses: any) =>
+    Array.isArray(responses) &&
+    responses.some((r: any) => r.userId?.toString() === user._id.toString())
   );
 
   if (alreadyVoted) {
-    return socket.emit("error", "Already voted");
+    return socket.emit("error", "Already voted in this poll");
   }
 
   // SAFE TO PUSH - Store both userId and selected option
@@ -304,6 +321,30 @@ const handleClosePoll = (classId: string, pollId: number) => {
     createdAt: poll.createdAt,
   });
 
+  // Persist to MongoDB
+  try {
+    const flatResponses = Object.entries(poll.responses).flatMap(
+      ([optIndex, resps]: [string, any]) =>
+        (resps || []).map((r: any) => ({
+          userId: r.userId,
+          selectedOption: Number(optIndex),
+        }))
+    );
+
+    pollModel
+      .create({
+        classId,
+        question: poll.question,
+        options: poll.options,
+        responses: flatResponses,
+        isActive: false,
+        createdBy: poll.createdBy,
+      })
+      .catch((err) => console.error("Error saving poll to MongoDB:", err));
+  } catch (err) {
+    console.error("Poll save error:", err);
+  }
+
   classPolls.delete(classId);
 };
 const generateStats = (poll: any) => {
@@ -317,9 +358,39 @@ const generateStats = (poll: any) => {
     ).toFixed(1),
   }));
 };
-    socket.on("get_past_polls", ({ classId }) => {
-      const polls = pastPolls.get(classId) || [];
-      socket.emit("past_polls", polls);
+    socket.on("get_past_polls", async ({ classId }) => {
+      try {
+        const memPolls = pastPolls.get(classId) || [];
+        if (memPolls.length > 0) {
+          return socket.emit("past_polls", memPolls);
+        }
+
+        const dbPolls = await pollModel
+          .find({ classId })
+          .sort({ createdAt: -1 });
+
+        const formatted = dbPolls.map((p) => {
+          const responsesMap: Record<number, any[]> = {};
+          p.responses.forEach((r) => {
+            if (!responsesMap[r.selectedOption])
+              responsesMap[r.selectedOption] = [];
+            responsesMap[r.selectedOption].push({
+              userId: r.userId.toString(),
+              timestamp: (p.createdAt as any)?.getTime() || Date.now(),
+            });
+          });
+          return {
+            question: p.question,
+            options: p.options,
+            responses: responsesMap,
+            createdAt: p.createdAt,
+          };
+        });
+
+        socket.emit("past_polls", formatted);
+      } catch (err) {
+        socket.emit("past_polls", pastPolls.get(classId) || []);
+      }
     });
 
     socket.on("end_class", async ({ classId }) => {
@@ -346,6 +417,8 @@ const generateStats = (poll: any) => {
         });
 
         classQuestions.delete(classId);
+        classActiveFiles.delete(classId);
+        classPolls.delete(classId);
         console.log(`Class ${classId} ended`);
       } catch (err) {
         console.error("End class error:", err);
@@ -353,8 +426,37 @@ const generateStats = (poll: any) => {
       }
     });
 
+    // ---------------- 📄 SLIDE SHARING & SYNCHRONIZATION ----------------
     socket.on("share_file", ({ classId, file }) => {
-      io.to(classId).emit("new_file_shared", file);
+      const fileData = {
+        ...file,
+        page: file.page || 1,
+      };
+      classActiveFiles.set(classId, fileData);
+      io.to(classId).emit("new_file_shared", fileData);
+    });
+
+    socket.on("slide_page_change", ({ classId, page }) => {
+      const active = classActiveFiles.get(classId);
+      if (active) {
+        active.page = page;
+        classActiveFiles.set(classId, active);
+      }
+      io.to(classId).emit("slide_page_changed", { page });
+    });
+
+    socket.on("stop_file_share", ({ classId }) => {
+      classActiveFiles.delete(classId);
+      io.to(classId).emit("file_share_stopped");
+    });
+
+    // ---------------- 🎨 WHITEBOARD COLLABORATION ----------------
+    socket.on("whiteboard_draw", ({ classId, drawData }) => {
+      socket.to(classId).emit("whiteboard_draw", drawData);
+    });
+
+    socket.on("whiteboard_clear", ({ classId }) => {
+      socket.to(classId).emit("whiteboard_clear");
     });
 
     socket.on("disconnect", () => {

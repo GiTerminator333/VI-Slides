@@ -93,16 +93,26 @@ export default function TeacherAssignmentDetail() {
     setSubmissionsError("");
 
     try {
-      const res = await getAllSubmissions();
-      const filtered = res.data.submissions.filter(
-        (s) => s.assignmentTitle === assignment?.title
-      );
-      setSubmissions(filtered);
-      setSubmissionsVisible(true);
-      toast({
-        title: "Submissions Loaded",
-        description: `Found ${filtered.length} submission(s) for this assignment.`,
-      });
+      // Re-fetch latest assignment to get up-to-date populated submissions
+      const res = await getSingleAssignment(id!);
+      const latestAssignment = res.data?.assignment;
+      if (latestAssignment) {
+        setAssignment(latestAssignment);
+        const subList: AllSubmission[] = (latestAssignment.submissions || []).map(
+          (sub: any) => ({
+            assignmentTitle: latestAssignment.title,
+            student: sub.student || { fullname: "Student", email: "" },
+            fileUrl: sub.fileUrl,
+            submittedAt: sub.submittedAt,
+          })
+        );
+        setSubmissions(subList);
+        setSubmissionsVisible(true);
+        toast({
+          title: "Submissions Loaded",
+          description: `Found ${subList.length} submission(s) for this assignment.`,
+        });
+      }
     } catch (err: any) {
       const errorMsg = err?.response?.data?.message || "Failed to load submissions";
       setSubmissionsError(errorMsg);

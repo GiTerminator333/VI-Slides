@@ -13,9 +13,11 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { getSocket } from "@/lib/socket";
-import { PollModal } from "./PollModal"; // Add import
+import { PollModal } from "./PollModal";
 import { Button } from "@/components/ui/button";
 import { PastPollsButton } from "../components/sessionbuttons";
+import { uploadClassPDF } from "@/lib/api";
+import { FileX } from "lucide-react";
 import React from "react";
 
 type TopbarProps = {
@@ -32,10 +34,27 @@ type TopbarProps = {
   onViewPastPolls?: () => void;
   currentPollId?: number;
   onClosePoll?: (pollId: number) => void;
+  isPdfSharing?: boolean;
+  onStopPdf?: () => void;
 };
 
-export const Topbar = ({ sessionName, code, classId, onShareFile, onStreamStarted, onStreamStopped , onOpenWhiteboard , onToggleMic,
-  isMicOn,onEndSession,onViewPastPolls,currentPollId,onClosePoll,}: TopbarProps) => {
+export const Topbar = ({
+  sessionName,
+  code,
+  classId,
+  onShareFile,
+  onStreamStarted,
+  onStreamStopped,
+  onOpenWhiteboard,
+  onToggleMic,
+  isMicOn,
+  onEndSession,
+  onViewPastPolls,
+  currentPollId,
+  onClosePoll,
+  isPdfSharing,
+  onStopPdf,
+}: TopbarProps) => {
   const { user } = useAuth();
   const isInstructor = user?.role === "Instructor";
   const navigate = useNavigate();
@@ -69,6 +88,40 @@ export const Topbar = ({ sessionName, code, classId, onShareFile, onStreamStarte
     onStreamStopped();
     setIsSharing(false);
   };
+
+  const handlePdfSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const dataUrl = reader.result as string;
+        let fileUrl = "";
+        try {
+          const res = await uploadClassPDF(classId, file.name, dataUrl);
+          const serverBase = import.meta.env.VITE_SOCKET_URL || "http://localhost:3000";
+          fileUrl = `${serverBase}${res.data.file.url}`;
+        } catch (uploadErr) {
+          console.warn("Backend PDF upload failed, falling back to data URL:", uploadErr);
+          fileUrl = dataUrl;
+        }
+
+        onShareFile({
+          name: file.name,
+          url: fileUrl,
+          type: "application/pdf",
+          page: 1,
+        });
+      } catch (err) {
+        console.error("Error reading PDF file:", err);
+      }
+    };
+    reader.readAsDataURL(file);
+    // Reset file input value so re-selecting same file works
+    e.target.value = "";
+  };
+
   const handleCreatePoll = (question: string, options: string[], duration: number) => {
     getSocket().emit("create_poll", {
       classId,
@@ -77,15 +130,17 @@ export const Topbar = ({ sessionName, code, classId, onShareFile, onStreamStarte
       duration,
     });
   };
+
   const handleClosePoll = () => {
-  if (currentPollId) {
-    getSocket().emit("close_poll", {
-      classId,
-      pollId: currentPollId,
-    });
-    onClosePoll?.(currentPollId);
-  }
-};
+    if (currentPollId) {
+      getSocket().emit("close_poll", {
+        classId,
+        pollId: currentPollId,
+      });
+      onClosePoll?.(currentPollId);
+    }
+  };
+
   return (
     <div className="w-full flex items-center justify-between px-6 py-3 border-b bg-white/10 backdrop-blur-xl">
       <div className="flex items-center gap-2">
@@ -97,13 +152,26 @@ export const Topbar = ({ sessionName, code, classId, onShareFile, onStreamStarte
 
       {isInstructor && (
         <div className="flex items-center gap-2">
-          <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" 
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onShareFile({ name: file.name, url: URL.createObjectURL(file), type: file.type });
-            }} 
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,application/pdf"
+            className="hidden"
+            onChange={handlePdfSelected}
           />
-          <ChooseFile onClick={() => fileInputRef.current?.click()} />
+          {!isPdfSharing ? (
+            <ChooseFile onClick={() => fileInputRef.current?.click()} />
+          ) : (
+            <Button
+              onClick={onStopPdf}
+              variant="destructive"
+              className="h-10 px-4 text-sm font-semibold gap-2"
+            >
+              <FileX size={16} />
+              <span>Stop PDF</span>
+            </Button>
+          )}
+
           {!isSharing ? <ShareScreen onClick={handleStartShare} /> : <StopShare onClick={handleStopShare} />}
           <PollButton onClick={() => setPollModalOpen(true)} />
           {currentPollId && (
@@ -119,9 +187,9 @@ export const Topbar = ({ sessionName, code, classId, onShareFile, onStreamStarte
       )}
       {!isInstructor && <LeaveButton onClick={() => navigate("/dashboard")} />}
       <PollModal
-      open={pollModalOpen}
-      onClose={() => setPollModalOpen(false)}
-      onCreatePoll={handleCreatePoll}
+        open={pollModalOpen}
+        onClose={() => setPollModalOpen(false)}
+        onCreatePoll={handleCreatePoll}
       />
     </div>
   );

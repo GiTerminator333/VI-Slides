@@ -235,9 +235,9 @@ export default function SignupForm() {
 
               {/* Submit Button - Full Width */}
               <Button
+                type="submit"
                 className="group/btn col-span-1 sm:col-span-2 w-full h-12 mt-4 bg-orange-600 hover:bg-orange-500 text-white font-bold transition-all shadow-lg shadow-orange-950/20 active:scale-[0.98]"
                 disabled={isLoading}
-                onClick={handleSubmit}
               >
                 {isLoading ? (
                   <Loader2 className="mr-2 size-4 animate-spin" />

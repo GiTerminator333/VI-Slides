@@ -220,6 +220,7 @@ export default function TeacherAssignments() {
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Describe the assignment..."
                     className="text-sm bg-muted/50 border border-foreground/10 rounded-md resize-none min-h-20"
+                    required
                   />
                 </div>
 
@@ -233,6 +234,7 @@ export default function TeacherAssignments() {
                       value={maxMarks}
                       onChange={(e) => setMaxMarks(e.target.value)}
                       className="h-9 text-sm bg-muted/50 border border-foreground/10 rounded-md"
+                      required
                     />
                   </div>
 
@@ -246,6 +248,7 @@ export default function TeacherAssignments() {
                       onChange={(e) => setDeadline(e.target.value)}
                       min={new Date().toISOString().slice(0, 16)}
                       className="h-9 text-sm bg-muted/50 border border-foreground/10 rounded-md"
+                      required
                     />
                   </div>
                 </div>

@@ -6,12 +6,14 @@ import {
 import { Slider } from "./ui/slider";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { getSocket } from "@/lib/socket";
 
 // -- Types --
 type Tool = "pen" | "eraser" | "rect" | "circle" | "line" | "triangle" | "arrow";
 
 interface WhiteboardProps {
   onClose: () => void;
+  classId?: string;
 }
 
 // -- Improved Constants & Helpers --
@@ -25,7 +27,7 @@ const TOOLS = [
   { id: "arrow", icon: <MoveRight size={16} />, label: "Arrow" },
 ];
 
-const Whiteboard: React.FC<WhiteboardProps> = ({ onClose }) => {
+const Whiteboard: React.FC<WhiteboardProps> = ({ onClose, classId }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -66,6 +68,92 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ onClose }) => {
   }, []);
 
   const getCtx = useCallback(() => canvasRef.current?.getContext("2d", { willReadFrequently: true }) ?? null, []);
+
+  // -- Socket Collaboration Listeners --
+  useEffect(() => {
+    if (!classId) return;
+    const socket = getSocket();
+
+    const handleRemoteDraw = (drawData: any) => {
+      const canvas = canvasRef.current;
+      const ctx = getCtx();
+      if (!canvas || !ctx) return;
+
+      ctx.save();
+      ctx.lineWidth = drawData.brushSize || 4;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = drawData.color || "#818cf8";
+
+      if (drawData.type === "line") {
+        ctx.globalCompositeOperation = drawData.tool === "eraser" ? "destination-out" : "source-over";
+        ctx.beginPath();
+        ctx.moveTo(drawData.fromX, drawData.fromY);
+        ctx.quadraticCurveTo(
+          drawData.fromX,
+          drawData.fromY,
+          (drawData.fromX + drawData.toX) / 2,
+          (drawData.fromY + drawData.toY) / 2
+        );
+        ctx.stroke();
+      } else if (drawData.type === "shape") {
+        ctx.globalCompositeOperation = "source-over";
+        drawRemoteShape(ctx, drawData);
+      }
+      ctx.restore();
+    };
+
+    const handleRemoteClear = () => {
+      const canvas = canvasRef.current;
+      const ctx = getCtx();
+      if (canvas && ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        historyRef.current = [];
+        redoRef.current = [];
+        setStackVer((v) => v + 1);
+      }
+    };
+
+    socket.on("whiteboard_draw", handleRemoteDraw);
+    socket.on("whiteboard_clear", handleRemoteClear);
+
+    return () => {
+      socket.off("whiteboard_draw", handleRemoteDraw);
+      socket.off("whiteboard_clear", handleRemoteClear);
+    };
+  }, [classId, getCtx]);
+
+  // -- Remote Shape Drawing --
+  const drawRemoteShape = (ctx: CanvasRenderingContext2D, data: any) => {
+    const { tool: sTool, startX: sx, startY: sy, endX: x, endY: y, brushSize: bSize } = data;
+    ctx.beginPath();
+
+    if (sTool === "rect") ctx.strokeRect(sx, sy, x - sx, y - sy);
+    if (sTool === "circle") {
+      const r = Math.hypot(x - sx, y - sy);
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    }
+    if (sTool === "line") {
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(x, y);
+    }
+    if (sTool === "triangle") {
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(x, y);
+      ctx.lineTo(sx - (x - sx), y);
+      ctx.closePath();
+    }
+    if (sTool === "arrow") {
+      const headLen = Math.max(15, (bSize || 4) * 3);
+      const angle = Math.atan2(y - sy, x - sx);
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x - headLen * Math.cos(angle - Math.PI / 6), y - headLen * Math.sin(angle - Math.PI / 6));
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - headLen * Math.cos(angle + Math.PI / 6), y - headLen * Math.sin(angle + Math.PI / 6));
+    }
+    ctx.stroke();
+  };
 
   // -- Drawing Logic --
   const drawShape = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
@@ -150,6 +238,23 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ onClose }) => {
       // Quadratic curve for smooth lines
       ctx.quadraticCurveTo(lastPoint.current.x, lastPoint.current.y, (lastPoint.current.x + x) / 2, (lastPoint.current.y + y) / 2);
       ctx.stroke();
+
+      if (classId) {
+        getSocket().emit("whiteboard_draw", {
+          classId,
+          drawData: {
+            type: "line",
+            tool,
+            fromX: lastPoint.current.x,
+            fromY: lastPoint.current.y,
+            toX: x,
+            toY: y,
+            color,
+            brushSize,
+          },
+        });
+      }
+
       lastPoint.current = { x, y };
     } else {
       ctx.globalCompositeOperation = "source-over";
@@ -158,10 +263,44 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ onClose }) => {
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!drawing) return;
+    const canvas = canvasRef.current;
+    if (canvas && tool !== "pen" && tool !== "eraser" && classId) {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      getSocket().emit("whiteboard_draw", {
+        classId,
+        drawData: {
+          type: "shape",
+          tool,
+          startX: startPos.current.x,
+          startY: startPos.current.y,
+          endX: x,
+          endY: y,
+          color,
+          brushSize,
+        },
+      });
+    }
+
     setDrawing(false);
     snapshotRef.current = null;
     setStackVer(v => v + 1);
+  };
+
+  const handleClear = () => {
+    const ctx = getCtx();
+    if (ctx) {
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      historyRef.current = [];
+      redoRef.current = [];
+      setStackVer(v => v + 1);
+      if (classId) {
+        getSocket().emit("whiteboard_clear", { classId });
+      }
+    }
   };
 
   return (
@@ -224,13 +363,7 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ onClose }) => {
           }} disabled={redoRef.current.length === 0}>
             <Redo2 size={18} />
           </Button>
-          <Button variant="destructive" size="sm" onClick={() => {
-            const ctx = getCtx();
-            ctx?.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-            historyRef.current = [];
-            redoRef.current = [];
-            setStackVer(v => v + 1);
-          }} className="gap-2">
+          <Button variant="destructive" size="sm" onClick={handleClear} className="gap-2">
             <Trash2 size={14} /> <span className="hidden sm:inline">Clear</span>
           </Button>
           <Button variant="ghost" size="icon" onClick={onClose}><X size={18} /></Button>

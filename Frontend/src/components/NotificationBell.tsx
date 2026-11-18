@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { getAssignments, type Assignment, getTodos, type Todo } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -22,6 +23,8 @@ export default function NotificationBell() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isInstructor = user?.role === "Instructor";
   const hasFetched = useRef(false);
 
   // Assignment states
@@ -113,12 +116,12 @@ export default function NotificationBell() {
 
   const now = new Date();
 
-  // New todo created (in last 10s)
+  // New todo created (in last 24h)
   const newTodos = todos
     .filter(t => !clearedTodoIds.includes(t._id))
     .filter(t => {
       const created = new Date(t.createdAt);
-      return (now.getTime() - created.getTime()) < 10000;
+      return (now.getTime() - created.getTime()) < 24 * 60 * 60 * 1000;
     })
     .map(t => ({
       ...t,
@@ -247,7 +250,7 @@ export default function NotificationBell() {
                   }`}
                 onClick={() => {
                   markAssignmentAsRead(a._id);
-                  navigate(`/assignment/${a._id}`);
+                  navigate(isInstructor ? `/assignments/${a._id}` : `/assignment/${a._id}`);
                 }}
               >
                 <div className="flex justify-between items-start">

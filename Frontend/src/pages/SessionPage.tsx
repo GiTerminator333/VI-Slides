@@ -28,6 +28,7 @@ const SessionPage = () => {
   const { classData, loading, error, sessionEnded } = useClassData(classId);
 
   const [sharedFile, setSharedFile] = useState<any | null>(null);
+  const [slidePage, setSlidePage] = useState<number>(1);
   const [questions, setQuestions] = useState<any[]>([]);
   const [currentPoll, setCurrentPoll] = useState<any>(null);
   const [pollStats, setPollStats] = useState<any>(null);
@@ -135,10 +136,23 @@ const SessionPage = () => {
 
   setCurrentPoll(null);
 };
-const handleViewPastPolls = () => {
-  getSocket().emit("get_past_polls", { classId });
-  setShowPastPolls(true);
-};
+  const handleViewPastPolls = () => {
+    getSocket().emit("get_past_polls", { classId });
+    setShowPastPolls(true);
+  };
+
+  // ================== SLIDE PRESENTATION ==================
+  const handleSlidePageChange = (newPage: number) => {
+    setSlidePage(newPage);
+    getSocket().emit("slide_page_change", { classId, page: newPage });
+  };
+
+  const handleStopSlideShare = () => {
+    setSharedFile(null);
+    setSlidePage(1);
+    getSocket().emit("stop_file_share", { classId });
+  };
+
   // ================== SOCKET + WEBRTC ==================
   useSessionSocket({
     classId,
@@ -151,6 +165,8 @@ const handleViewPastPolls = () => {
     micStream,
     localStream,
     setSharedFile,
+    slidePage,
+    setSlidePage,
     setQuestions,
     setCurrentPoll,
     setPollStats,
@@ -210,6 +226,7 @@ const handleViewPastPolls = () => {
             classId={classId!}
             onShareFile={(file) => {
               setSharedFile(file);
+              setSlidePage(file.page || 1);
               getSocket().emit("share_file", { classId, file });
             }}
             onStreamStarted={handleStreamStarted}
@@ -221,16 +238,22 @@ const handleViewPastPolls = () => {
             currentPollId={currentPoll?.id}
             onClosePoll={() => setCurrentPoll(null)}
             onViewPastPolls={handleViewPastPolls}
+            isPdfSharing={!!sharedFile}
+            onStopPdf={handleStopSlideShare}
           />
 
           <WhiteboardModal
             show={showWhiteboard}
             onClose={() => setShowWhiteboard(false)}
+            classId={classId}
           />
           <VideoDisplay
             isTeacher={isTeacher}
             videoRef={videoRef}
             sharedFile={sharedFile}
+            slidePage={slidePage}
+            onSlidePageChange={handleSlidePageChange}
+            onStopSlideShare={handleStopSlideShare}
           />
         </div>
       </SidebarInset>

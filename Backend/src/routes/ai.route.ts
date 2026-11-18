@@ -5,10 +5,11 @@ import { allowRoles } from "../middleware/role.middleware";
 
 const router = express.Router();
 
+// Allow both Students and Instructors to use AI Doubt Assistance
 router.post(
   "/answer",
   authMiddleware,
-  allowRoles("Instructor"),
+  allowRoles("Instructor", "Student"),
   generateAIAnswer
 );
 

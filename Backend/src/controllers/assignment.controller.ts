@@ -10,11 +10,16 @@ export const createAssignment = async (
   try {
     const { title, description, dueDate, maxMarks } = req.body;
 
+    if (!title || !description || !dueDate) {
+      res.status(400).json({ message: "Title, description, and deadline are required" });
+      return;
+    }
+
     const assignment = await assignmentModel.create({
       title,
       description,
       dueDate,
-      maxMarks,
+      maxMarks: Number(maxMarks) || 100,
       createdBy: req.user?._id,
     });
 
@@ -22,8 +27,9 @@ export const createAssignment = async (
       message: "Assignment created",
       assignment,
     });
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
+  } catch (err: any) {
+    const msg = err?.message || "Server error";
+    res.status(500).json({ message: msg });
   }
 };
 
