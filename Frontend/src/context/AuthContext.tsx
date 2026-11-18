@@ -34,27 +34,49 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Rehydrate session on app load via cookie
+  // Rehydrate session on app load via cookie or token
   useEffect(() => {
     getCurrentUser()
-      .then((res) => setUser(res.data.user))
-      .catch(() => setUser(null))
+      .then((res) => {
+        setUser(res.data.user);
+        if (!res.data.user && typeof window !== "undefined") {
+          localStorage.removeItem("token");
+        }
+      })
+      .catch(() => {
+        setUser(null);
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("token");
+        }
+      })
       .finally(() => setIsLoading(false));
   }, []);
 
   const login = async (data: LoginData) => {
     const res = await loginUser(data);
+    if (res.data.token && typeof window !== "undefined") {
+      localStorage.setItem("token", res.data.token);
+    }
     setUser(res.data.user);
   };
 
   const register = async (data: RegisterData) => {
     const res = await registerUser(data);
+    if (res.data.token && typeof window !== "undefined") {
+      localStorage.setItem("token", res.data.token);
+    }
     setUser(res.data.user);
   };
 
   const logout = async () => {
-    await logoutUser();
-    setUser(null);
+    try {
+      await logoutUser();
+    } finally {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("token");
+      }
+      setUser(null);
+    }
   };
 
   const updateUser = async (data: UpdateUserData) => {

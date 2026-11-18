@@ -6,13 +6,31 @@ import bcrypt from "bcrypt";
 interface AuthRequest extends Request {
   user?: {
     _id: string;
+    role?: string;
   };
 }
+
+const isProduction = process.env.NODE_ENV === "production";
+
+const getCookieOptions = () => ({
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: (isProduction ? "none" : "lax") as "none" | "lax",
+  path: "/",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+});
 
 // ------------------- GET USER -------------------
 const getUserController = async (req: Request, res: Response): Promise<void> => {
   try {
-    const token = req.cookies?.token;
+    let token = req.cookies?.token;
+
+    if (!token && req.headers.authorization) {
+      const authHeader = req.headers.authorization;
+      if (authHeader.startsWith("Bearer ")) {
+        token = authHeader.substring(7).trim();
+      }
+    }
 
     if (!token) {
       res.status(200).json({ user: null });
@@ -25,7 +43,7 @@ const getUserController = async (req: Request, res: Response): Promise<void> => 
     ) as JwtPayload;
 
     const user = await userModel
-      .findById(decoded._id)
+      .findById(decoded._id || decoded.id)
       .select("-password");
 
     if (!user) {
@@ -44,32 +62,33 @@ const registerController = async (req: Request, res: Response): Promise<void> =>
   try {
     const { fullname, email, password, role } = req.body;
 
+    const normalizedRole =
+      role && role.toString().trim().toLowerCase() === "instructor"
+        ? "Instructor"
+        : "Student";
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await userModel.create({
-      fullname,
-      email,
+      fullname: fullname?.trim(),
+      email: email ? email.toString().trim().toLowerCase() : "",
       password: hashedPassword,
-      role, 
+      role: normalizedRole,
     });
 
     const token = jwt.sign(
-      { _id: user._id },
+      { _id: user._id, role: user.role },
       process.env.JWT_SECRET as string,
       { expiresIn: "7d" }
     );
 
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie("token", token, getCookieOptions());
 
     const { password: _, ...userData } = user.toObject();
 
     res.status(201).json({
       message: "User registered successfully",
+      token,
       user: userData,
     });
   } catch (err: any) {
@@ -88,7 +107,9 @@ const loginController = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
-    const user = await userModel.findOne({ email });
+    const user = await userModel.findOne({
+      email: email ? email.toString().trim().toLowerCase() : "",
+    });
 
     if (!user) {
       res.status(404).json({ message: "User not found" });
@@ -103,22 +124,18 @@ const loginController = async (req: Request, res: Response): Promise<void> => {
     }
 
     const token = jwt.sign(
-      { _id: user._id },
+      { _id: user._id, role: user.role },
       process.env.JWT_SECRET as string,
       { expiresIn: "7d" }
     );
 
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie("token", token, getCookieOptions());
 
     const { password: _, ...userData } = user.toObject();
 
     res.status(200).json({
       message: "User logged in successfully",
+      token,
       user: userData,
     });
   } catch (err) {
@@ -131,8 +148,9 @@ const loginController = async (req: Request, res: Response): Promise<void> => {
 const logoutController = async (_req: Request, res: Response): Promise<void> => {
   res.clearCookie("token", {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",
+    secure: isProduction,
+    sameSite: (isProduction ? "none" : "lax") as "none" | "lax",
+    path: "/",
   });
 
   res.json({
@@ -153,7 +171,7 @@ const updateUserController = async (
       return;
     }
 
-    const { fullname, oldPassword, newPassword } = req.body;
+    const { fullname, oldPassword, newPassword, role } = req.body;
 
     const user = await userModel.findById(userId);
 
@@ -170,6 +188,14 @@ const updateUserController = async (
         return;
       }
       updateData.fullname = fullname.trim();
+    }
+
+    if (role) {
+      const normalizedRole =
+        role.toString().trim().toLowerCase() === "instructor"
+          ? "Instructor"
+          : "Student";
+      updateData.role = normalizedRole;
     }
 
     if (oldPassword || newPassword) {

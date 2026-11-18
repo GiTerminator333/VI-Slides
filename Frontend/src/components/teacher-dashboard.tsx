@@ -38,11 +38,21 @@ export default function TeacherDashboard() {
       return;
     }
 
+    const isInstructor = user?.role?.toLowerCase() === "instructor";
+    if (!isInstructor) {
+      toast({
+        title: "Instructor Role Required",
+        description: `Your account is registered as "${user?.role || "Student"}". You can switch your role to Instructor in Edit Profile.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsCreating(true);
     try {
-      const createRes = await createClass(sessionTitle);
+      const createRes = await createClass(sessionTitle.trim());
       const newClass = createRes.data?.data;
-      if (!newClass?._id) throw new Error("Invalid response");
+      if (!newClass?._id) throw new Error("Invalid response from server");
       await startClass(newClass._id);
       
       toast({

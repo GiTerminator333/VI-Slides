@@ -16,7 +16,8 @@ const generateClassCode = (): string => {
 // ------------------- CREATE CLASS -------------------
 export const createClass = async (req: AuthRequest, res: Response) => {
   try {
-    if (req.user.role !== "Instructor") {
+    const userRole = (req.user?.role || "").toString().trim().toLowerCase();
+    if (userRole !== "instructor") {
       return res.status(403).json({
         message: "Only instructors can create classes",
       });
@@ -60,7 +61,8 @@ export const startClass = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "Class not found" });
     }
 
-    if (req.user.role !== "Instructor") {
+    const userRole = (req.user?.role || "").toString().trim().toLowerCase();
+    if (userRole !== "instructor") {
       return res.status(403).json({
         message: "Only instructors can start class",
       });
@@ -103,7 +105,8 @@ export const endClass = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "Class not found" });
     }
 
-    if (req.user.role !== "Instructor") {
+    const userRole = (req.user?.role || "").toString().trim().toLowerCase();
+    if (userRole !== "instructor") {
       return res.status(403).json({
         message: "Only instructors can end class",
       });
@@ -152,13 +155,9 @@ export const joinClass = async (req: AuthRequest, res: Response) => {
   try {
     const { classCode } = req.body;
 
-    if (req.user.role !== "Student") {
-      return res.status(403).json({
-        message: "Only students can join classes",
-      });
-    }
-
-    const classObj = await classModel.findOne({ classCode });
+    const classObj = await classModel.findOne({
+      classCode: classCode ? classCode.toString().trim().toUpperCase() : "",
+    });
 
     if (!classObj) {
       return res.status(404).json({ message: "Invalid class code" });
@@ -168,13 +167,17 @@ export const joinClass = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: "Class is not live" });
     }
 
-    const alreadyJoined = classObj.participants.some(
-      (id) => id.toString() === req.user._id.toString()
-    );
+    const isClassInstructor = classObj.instructor.toString() === req.user._id.toString();
 
-    if (!alreadyJoined) {
-      classObj.participants.push(req.user._id);
-      await classObj.save();
+    if (!isClassInstructor) {
+      const alreadyJoined = classObj.participants.some(
+        (id) => id.toString() === req.user._id.toString()
+      );
+
+      if (!alreadyJoined) {
+        classObj.participants.push(req.user._id);
+        await classObj.save();
+      }
     }
 
     res.json({

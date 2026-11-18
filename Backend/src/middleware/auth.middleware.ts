@@ -11,7 +11,15 @@ const authMiddleware = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  const token = req.cookies?.token;
+  let token = req.cookies?.token;
+
+  // Also support Authorization header (Bearer token)
+  if (!token && req.headers.authorization) {
+    const authHeader = req.headers.authorization;
+    if (authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7).trim();
+    }
+  }
 
   if (!token) {
     res.status(401).json({

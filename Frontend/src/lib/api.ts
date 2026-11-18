@@ -15,6 +15,7 @@ export interface UpdateUserData {
   fullname?: string;
   oldPassword?: string;
   newPassword?: string;
+  role?: string;
 }
 export interface User {
   _id: string;
@@ -26,6 +27,7 @@ export interface User {
 }
 export interface AuthResponse {
   message: string;
+  token?: string;
   user: User;
 }
 export interface GetUserResponse {
@@ -181,12 +183,28 @@ const api = axios.create({
   withCredentials: true,
 });
 
+// -------- REQUEST INTERCEPTOR (Bearer Token) --------
+api.interceptors.request.use(
+  (config) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (token) {
+      config.headers = config.headers || {};
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
 // -------- INTERCEPTORS --------
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
       console.warn("Session expired");
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("token");
+      }
     }
     return Promise.reject(error);
   }

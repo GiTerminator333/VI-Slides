@@ -8,8 +8,11 @@ export const allowRoles = (...roles: string[]) => {
       return;
     }
 
-    if (!roles.includes(req.user.role)) {
-      res.status(403).json({ message: "Access denied" });
+    const userRole = (req.user.role || "").toString().trim().toLowerCase();
+    const normalizedRoles = roles.map((r) => r.trim().toLowerCase());
+
+    if (!normalizedRoles.includes(userRole)) {
+      res.status(403).json({ message: "Access denied: Insufficient permissions" });
       return;
     }
 

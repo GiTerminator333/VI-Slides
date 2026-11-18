@@ -2,11 +2,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff } from "lucide-react";
-import { ArrowLeft } from "lucide-react";
+import { Eye, EyeOff, ArrowLeft, GraduationCap, UserCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import React from "react";
 
@@ -26,6 +25,18 @@ export default function EditProfile() {
     confirmPassword: "",
   });
 
+  const [selectedRole, setSelectedRole] = useState(user?.role || "Student");
+
+  useEffect(() => {
+    if (user) {
+      setFormData((prev) => ({
+        ...prev,
+        fullname: prev.fullname || user.fullname,
+      }));
+      setSelectedRole(user.role || "Student");
+    }
+  }, [user]);
+
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -43,12 +54,12 @@ export default function EditProfile() {
     setError(null);
     setSuccess(null);
 
-    // ❗ Validation (based on backend)
-    if (
-      !formData.fullname &&
-      !formData.oldPassword &&
-      !formData.newPassword
-    ) {
+    const hasNameChanged = formData.fullname.trim() !== (user?.fullname || "");
+    const hasRoleChanged = selectedRole !== user?.role;
+    const hasPassword = Boolean(formData.oldPassword || formData.newPassword);
+
+    // Validation
+    if (!hasNameChanged && !hasRoleChanged && !hasPassword) {
       const msg = "Nothing to update";
       setError(msg);
       toast({
@@ -73,6 +84,7 @@ export default function EditProfile() {
       });
       return;
     }
+
     // Confirm password check
     if (
       formData.newPassword &&
@@ -87,10 +99,16 @@ export default function EditProfile() {
       });
       return;
     }
+
     setIsLoading(true);
 
     try {
-      await updateUser(formData);
+      await updateUser({
+        fullname: formData.fullname.trim(),
+        oldPassword: formData.oldPassword || undefined,
+        newPassword: formData.newPassword || undefined,
+        role: selectedRole,
+      });
 
       const msg = "Profile updated successfully";
       setSuccess(msg);
@@ -158,6 +176,46 @@ export default function EditProfile() {
                 {success}
               </p>
             )}
+
+            {/* Account Role Selector */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Account Role</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSelectedRole("Instructor")}
+                  className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border transition-all text-left ${
+                    selectedRole === "Instructor"
+                      ? "border-orange-500/60 bg-orange-500/10 text-orange-400 shadow-md shadow-orange-500/10"
+                      : "border-white/10 bg-white/5 text-neutral-400 hover:border-white/20 hover:text-white"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-semibold text-sm">
+                    <UserCheck className="size-4" /> Instructor
+                  </div>
+                  <span className="text-[11px] text-neutral-400 text-center leading-tight">
+                    Host classes, slides & polls
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedRole("Student")}
+                  className={`flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border transition-all text-left ${
+                    selectedRole === "Student"
+                      ? "border-orange-500/60 bg-orange-500/10 text-orange-400 shadow-md shadow-orange-500/10"
+                      : "border-white/10 bg-white/5 text-neutral-400 hover:border-white/20 hover:text-white"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-semibold text-sm">
+                    <GraduationCap className="size-4" /> Student
+                  </div>
+                  <span className="text-[11px] text-neutral-400 text-center leading-tight">
+                    Join live rooms & AI tutor
+                  </span>
+                </button>
+              </div>
+            </div>
 
             {/* Fullname */}
             <div className="space-y-2">

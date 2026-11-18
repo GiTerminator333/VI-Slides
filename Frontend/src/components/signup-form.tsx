@@ -76,21 +76,25 @@ export default function SignupForm() {
     setIsLoading(true);
     try {
       await register({
-        fullname: formData.fullname,
-        email: formData.email,
+        fullname: formData.fullname.trim(),
+        email: formData.email.trim().toLowerCase(),
         password: formData.password,
-        role: formData.role,
+        role: formData.role.trim(),
       });
       toast({
         title: "Account Created!",
-        description: "Welcome to VI-Slides. Setting up your workspace...",
+        description: `Welcome to VI-Slides as an ${formData.role}! Setting up your workspace...`,
       });
       navigate("/dashboard");
-    } catch (err) {
-      const isAxiosError = axios.isAxiosError(err);
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        (axios.isAxiosError(err)
+          ? "Unable to register with provided details."
+          : "Unexpected error occurred.");
       toast({
         title: "Registration Failed",
-        description: isAxiosError ? "Unable to register with provided details." : "Unexpected error occurred.",
+        description: errorMsg,
         variant: "destructive",
       });
     } finally {

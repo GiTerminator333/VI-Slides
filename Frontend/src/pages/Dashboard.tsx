@@ -8,6 +8,7 @@ import React from "react";
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const isInstructor = user?.role?.toLowerCase() === "instructor";
 
   return (
     <div className="relative min-h-screen w-full text-white selection:bg-orange-500/30 overflow-x-hidden bg-[#050508]">
@@ -49,11 +50,11 @@ export default function Dashboard() {
             </div>
             
             <h1 className="text-5xl md:text-7xl font-black tracking-tighter bg-linear-to-b from-white via-white to-white/20 bg-clip-text text-transparent">
-              {user?.role === "Instructor" ? "Instructor Space" : "Student Space"}
+              {isInstructor ? "Instructor Space" : "Student Space"}
             </h1>
             
             <p className="text-neutral-400 text-lg md:text-xl max-w-2xl mx-auto font-medium leading-relaxed"> 
-              {user?.role === "Instructor" 
+              {isInstructor 
                 ? "Manage your live sessions and students with precision." 
                 : "Track your progress and join live rooms in real-time."}
             </p>
@@ -61,7 +62,7 @@ export default function Dashboard() {
 
             {/* The wrapper now uses a very slight tint instead of black */}
             <div>
-              {user?.role === "Instructor" ? (
+              {isInstructor ? (
                 <TeacherDashboard />
               ) : (
                 <StudentDashboard />

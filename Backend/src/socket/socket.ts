@@ -94,7 +94,9 @@ export const initSocket = (server: http.Server) => {
         });
 
         // Notify teacher that a student joined (for initial WebRTC setup)
-        if (user.role !== "Instructor") {
+        const isInstructorUser =
+          (user.role || "").toString().trim().toLowerCase() === "instructor";
+        if (!isInstructorUser) {
           socket.to(classId).emit("student_joined", {
             studentId: socket.id,
           });
@@ -174,7 +176,9 @@ export const initSocket = (server: http.Server) => {
 
     socket.on("answer_question", ({ classId, questionId, answer }) => {
       const user = socket.data.user;
-      if (user.role !== "Instructor") {
+      const isInstructorUser =
+        (user.role || "").toString().trim().toLowerCase() === "instructor";
+      if (!isInstructorUser) {
         return socket.emit("error", "Only instructor can answer");
       }
 
@@ -202,8 +206,10 @@ export const initSocket = (server: http.Server) => {
  */
 socket.on("create_poll", ({ classId, question, options, duration = 30 }) => {
   const user = socket.data.user;
+  const isInstructorUser =
+    (user.role || "").toString().trim().toLowerCase() === "instructor";
 
-  if (user.role !== "Instructor") {
+  if (!isInstructorUser) {
     return socket.emit("error", "Only instructors can create polls");
   }
 
@@ -282,8 +288,10 @@ socket.on("submit_poll_response", ({ classId, pollId, selectedOption }) => {
  */
 socket.on("close_poll", ({ classId, pollId }) => {
   const user = socket.data.user;
-  
-  if (user.role !== "Instructor") {
+  const isInstructorUser =
+    (user.role || "").toString().trim().toLowerCase() === "instructor";
+
+  if (!isInstructorUser) {
     return socket.emit("error", "Only instructors can close polls");
   }
 
@@ -396,7 +404,9 @@ const generateStats = (poll: any) => {
     socket.on("end_class", async ({ classId }) => {
       try {
         const user = socket.data.user;
-        if (user.role !== "Instructor") {
+        const isInstructorUser =
+          (user.role || "").toString().trim().toLowerCase() === "instructor";
+        if (!isInstructorUser) {
           return socket.emit("error", "Only instructor can end class");
         }
 

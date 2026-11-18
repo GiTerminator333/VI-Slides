@@ -55,8 +55,18 @@ export function DropdownMenuAvatar() {
         className="w-64 border border-white/20 bg-zinc-900/40 backdrop-blur-2xl backdrop-saturate-150 text-white shadow-[0_20px_50px_rgba(0,0,0,0.5)] animate-in fade-in slide-in-from-top-2 duration-300 rounded-2xl overflow-hidden"
       >
         <DropdownMenuLabel className="p-5 pb-4 border-b border-white/10">
-          <div className="flex flex-col gap-1">
-            <p className="text-base font-bold text-white tracking-tight leading-none pt-1">{user?.fullname}</p>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-base font-bold text-white tracking-tight leading-none pt-1 truncate">{user?.fullname}</p>
+              <span className={cn(
+                "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0",
+                user?.role?.toLowerCase() === "instructor"
+                  ? "bg-orange-500/10 text-orange-400 border-orange-500/30"
+                  : "bg-blue-500/10 text-blue-400 border-blue-500/30"
+              )}>
+                {user?.role || "Student"}
+              </span>
+            </div>
             <p className="text-xs font-medium text-white/40 truncate">{user?.email}</p>
           </div>
         </DropdownMenuLabel>

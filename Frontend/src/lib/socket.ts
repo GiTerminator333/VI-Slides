@@ -4,9 +4,13 @@ let socket: Socket | null = null;
 
 export const getSocket = (): Socket => {
   if (!socket) {
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem("token") : null;
+
     socket = io(import.meta.env.VITE_SOCKET_URL, {
       withCredentials: true,
-      transports: ["websocket"], 
+      transports: ["websocket"],
+      auth: token ? { token } : undefined,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
